@@ -342,163 +342,72 @@ print('\n 2. Probability of HeartDisease given cholesterol=100') q=HeartDisease_
 print(q['heartdisease'])
 
 #OBSTACLE DETECTION
-                   function.py
-                       import os
-                       import cv2
-                       import numpy as np
-                       import mediapipe as mp
-                       mp_drawing = mp.solutions.drawing_utils
-                       mp_drawing_styles = mp.solutions.drawing_styles  
-                       mp_hands = mp.solutions.hands
-                       def mediapipe_detection(image, model):
-                       image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-                      Image.flags.writeable = False
-                      results = model.process(image)
-                         image.flags.writeable = True
-                         image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
-                         return image, results
-                         def draw_styled_landmarks(image, results):
-if results.multi_hand_landmarks:
-for hand_landmarks in results.multi_hand_landmarks:
-mp_drawing.draw_landmarks(
-image,
-hand_landmarks,
-mp_hands.HAND_CONNECTIONS,
-mp_drawing_styles.get_default_hand_landmarks_style(),
-mp_drawing_styles.get_default_hand_connections_style(),
-)
-def extract_keypoints(results, hand_index=0):
-np.array: Flattened landmark coordinates (63 values).
-if results.multi_hand_landmarks and len(results.multi_hand_landmarks) > hand_index:
-hand = results.multi_hand_landmarks[hand_index]
-return np.array([[lm.x, lm.y, lm.z] for lm in hand.landmark]).flatten()
-return np.zeros(21 * 3)
-DATA_PATH = os.path.join("MP_Data")
-actions = np.array([chr(i) for i in range(65, 91)])  # A-Z
-no_sequences = 200
-sequence_length = 30
-def create_directories():
-for action in actions:
-for sequence in range(no_sequences):
-dir_path = os.path.join(DATA_PATH, action, str(sequence))
-os.makedirs(dir_path, exist_ok=True)
-
-                         #collect
-import os
 import cv2
-LETTERS = ['A', 'B', 'C', 'D']        # Extendable (['A'..'Z'])
-BASE_DIR = r"E:\SignLanguage\Image"
-ROI_TOP_LEFT = (0, 40)                # (x, y)
-ROI_BOTTOM_RIGHT = (300, 400)         # (x, y)
-ROI_COLOR = (0, 255, 0)               # Green rectangle
-FONT = cv2.FONT_HERSHEY_SIMPLEX
-os.makedirs(BASE_DIR, exist_ok=True)
-letter_counts = {}
-for letter in LETTERS:
-    path = os.path.join(BASE_DIR, letter)
-    os.makedirs(path, exist_ok=True)
-    # Start counting from existing images
-    letter_counts[letter] = len(os.listdir(path))
-def save_image(letter, roi):
-    filename = os.path.join(BASE_DIR, letter, f"{letter_counts[letter]}.png")
-    cv2.imwrite(filename, roi)
-    letter_counts[letter] += 1
-    print(f"[INFO] Saved image {filename}")
+import time
+from ultralytics import YOLO
+import pyttsx3
+
+# Load YOLO model
+model = YOLO("yolov8n.pt")
+
+# Start camera (you can replace with IP cam URL)
 cap = cv2.VideoCapture(0)
-if not cap.isOpened():
-    raise RuntimeError("Could not open webcam.")
-print("Press 'a', 'b', 'c', 'd' to save images for respective letters.")
-print("Press 'q' to quit.")
+
+# Initialize text-to-speech
+engine = pyttsx3.init()
+engine.setProperty("rate", 160)
+
+def speak(text):
+    print("🔊", text)
+    engine.say(text)
+    engine.runAndWait()
+
 while True:
     ret, frame = cap.read()
     if not ret:
-        print("[ERROR] Failed to grab frame.")
         break
-    cv2.rectangle(frame, ROI_TOP_LEFT, ROI_BOTTOM_RIGHT, ROI_COLOR, 2)
-    x1, y1 = ROI_TOP_LEFT
-    x2, y2 = ROI_BOTTOM_RIGHT
-    roi = frame[y1:y2, x1:x2]
-    cv2.imshow("ROI", roi)
-    cv2.imshow("Data", frame)
-    key = cv2.waitKey(10) & 0xFF
-    if key == ord('q'):
-        print("[INFO] Exiting...")
+
+    frame = cv2.resize(frame, (640, 480))
+    H, W = frame.shape[:2]
+
+    # Detect objects
+    results = model.predict(frame, conf=0.5, verbose=False)
+    detections = results[0].boxes
+
+    if detections is not None:
+        for box in detections:
+            x1, y1, x2, y2 = map(int, box.xyxy[0])
+            label = model.names[int(box.cls)]
+            cx = (x1 + x2) // 2
+
+            # Detect position
+            if cx < W / 3:
+                position = "left"
+                action = "move right"
+            elif cx > 2 * W / 3:
+                position = "right"
+                action = "move left"
+            else:
+                position = "center"
+                action = "move back"
+
+            # Draw and announce
+            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+            cv2.putText(frame, f"{label} ({position})", (x1, y1 - 10),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 0), 2)
+
+            speak(f"{label} ahead on your {position}, {action}.")
+            time.sleep(2)  # delay between alerts
+
+    cv2.imshow("Obstacle Detector", frame)
+
+    if cv2.waitKey(1) & 0xFF == ord('q'):
         break
-    for letter in LETTERS:
-        if key == ord(letter.lower()):
-            save_image(letter, roi)
-cap.release()
-cv2.destroyAllWindows() 
 
-#display
-import cv2
-import numpy as np
-from collections import deque
-from tensorflow.keras.models import load_model
-from function import *  # actions, mediapipe_detection, extract_keypoints
-import mediapipe as mp
-model = load_model("best_model.keras")
-print("✅ Model loaded successfully")
-def prob_viz(res, actions, input_frame, threshold=0.5):
-"""Draw probability bars for each action."""
-output_frame = input_frame.copy()
-for num, prob in enumerate(res):
-if prob < threshold:  # Skip low-confidence
-continue
-bar_length = int(prob * 250)
-cv2.rectangle(output_frame, (0, 60 + num * 35),
-(bar_length, 90 + num * 35),
-(0, 255, 0), -1)
-cv2.putText(output_frame,
-f"{actions[num]} {int(prob * 100)}%",
-(10, 85 + num * 35),
-cv2.FONT_HERSHEY_SIMPLEX, 0.6,
-(255, 255, 255), 2, cv2.LINE_AA)
-return output_frame
-sequence = deque(maxlen=30)       # last 30 frames
-predictions = deque(maxlen=15)    # smoothing predictions
-sentence = []
-threshold = 0.8
-cap = cv2.VideoCapture(0)
-if not cap.isOpened():
-raise RuntimeError("❌ Webcam not found!")
-mp_hands = mp.solutions.hands
-with mp_hands.Hands(
-min_detection_confidence=0.6,
-min_tracking_confidence=0.6
-) as hands:
-while True:
-ret, frame = cap.read()
-if not ret:
-print("❌ Failed to grab frame.")
-break
-frame = cv2.flip(frame, 1)  # Mirror image
-image, results = mediapipe_detection(frame, hands)
-if results.multi_hand_landmarks:
-keypoints = extract_keypoints(results)
-sequence.append(keypoints)
-if len(sequence) == 30:
-res = model.predict(np.expand_dims(sequence, axis=0), verbose=0)[0]
-pred_class = np.argmax(res)
-predictions.append(pred_class)
-smoothed_class = max(set(predictions), key=predictions.count)
-
-if res[smoothed_class] > threshold:
-action = actions[smoothed_class]
-if not sentence or action != sentence[-1]:
-sentence.append(action)
-sentence = sentence[-5:]
-frame = prob_viz(res, actions, frame, threshold=0.3)
-cv2.rectangle(frame, (0, 0), (640, 40), (0, 128, 255), -1)
-cv2.putText(frame, " ".join(sentence), (10, 28),
-cv2.FONT_HERSHEY_SIMPLEX, 1,
-(255, 255, 255), 2, cv2.LINE_AA)
-cv2.imshow("Sign Recognition", frame)
-if cv2.waitKey(10) & 0xFF == ord('q'):
-print(" Exiting...")
-break
 cap.release()
-cv2.destroyAllWindows() 
+cv2.destroyAllWindows()
+
+
 
 
 
